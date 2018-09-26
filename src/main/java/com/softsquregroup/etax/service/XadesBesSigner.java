@@ -8,6 +8,7 @@ import org.apache.xml.security.utils.XMLUtils;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
+import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 import xades4j.UnsupportedAlgorithmException;
 import xades4j.XAdES4jException;
@@ -36,20 +37,21 @@ import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.transform.TransformerConfigurationException;
 import javax.xml.transform.TransformerException;
 import javax.xml.transform.TransformerFactoryConfigurationError;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.StringReader;
 import java.security.KeyStoreException;
-import java.security.NoSuchAlgorithmException;
-import java.security.UnrecoverableKeyException;
-import java.security.cert.CertificateException;
 import java.util.Properties;
 
 @Slf4j
 public class XadesBesSigner {
 
     private static final String CONFIG_PATH = "src/main/resources/conf/etax-xades.properties";
+//    private static final Byte PKCS11 = 1;
+//    private static final Byte PKCS12 = 2;
     private static XadesSigner signer;
     private static XadesBesSigner instance;
     private static String pkType;
@@ -63,6 +65,9 @@ public class XadesBesSigner {
     private String xmlOutput;
     private AlgorithmsProviderEx algorithmsProviderEx;
 
+    /**
+     * Return instance of PKCS#11 signer
+     */
     public static XadesBesSigner getInstance() {
 
         if (null == instance) {
@@ -71,27 +76,9 @@ public class XadesBesSigner {
         return instance;
     }
 
-    public void setSignerPkcs11(String libPath, String providerName, int slotId, String password) throws Exception {// SigningException
-        // {
-        try {
-//            AlgorithmsProviderEx ap = new DefaultAlgorithmsProviderEx() {
-//
-//                @Override
-//                public String getDigestAlgorithmForDataObjsReferences() {
-//                    return MessageDigestAlgorithm.ALGO_ID_DIGEST_SHA512;
-//                }
-//
-//                @Override
-//                public String getDigestAlgorithmForReferenceProperties() {
-//                    return MessageDigestAlgorithm.ALGO_ID_DIGEST_SHA512;
-//                }
-//
-//                @Override
-//                public Algorithm getSignatureAlgorithm(String keyAlgorithmName) throws UnsupportedAlgorithmException {
-//                    return new GenericAlgorithm(XMLSignature.ALGO_ID_SIGNATURE_RSA_SHA512);
-//                }
-//            };
+    private void setSignerPkcs11(String libPath, String providerName, int slotId, String password) throws Exception {// SigningException
 
+        try {
             KeyingDataProvider keyingProvider = getKeyingDataProvider(libPath, providerName, slotId, password);
             XadesSigningProfile p = new XadesBesSigningProfile(keyingProvider);
             p.withAlgorithmsProviderEx(algorithmsProviderEx);
@@ -102,25 +89,8 @@ public class XadesBesSigner {
         }
     }
 
-    public void setSignerPkcs12(String keyPath, String password, String pkType) throws Exception {// SigningException
+    private void setSignerPkcs12(String keyPath, String password, String pkType) throws Exception {// SigningException
         try {
-//            AlgorithmsProviderEx ap = new DefaultAlgorithmsProviderEx() {
-//
-//                @Override
-//                public String getDigestAlgorithmForDataObjsReferences() {
-//                    return MessageDigestAlgorithm.ALGO_ID_DIGEST_SHA512;
-//                }
-//
-//                @Override
-//                public String getDigestAlgorithmForReferenceProperties() {
-//                    return MessageDigestAlgorithm.ALGO_ID_DIGEST_SHA512;
-//                }
-//
-//                @Override
-//                public Algorithm getSignatureAlgorithm(String keyAlgorithmName) throws UnsupportedAlgorithmException {
-//                    return new GenericAlgorithm(XMLSignature.ALGO_ID_SIGNATURE_RSA_SHA512);
-//                }
-//            };
             KeyingDataProvider keyingProvider = getKeyingDataProvider(keyPath, password, pkType);
             XadesSigningProfile p = new XadesBesSigningProfile(keyingProvider);
             p.withAlgorithmsProviderEx(algorithmsProviderEx);
@@ -135,13 +105,11 @@ public class XadesBesSigner {
      * For PKCS#11
      */
     private static KeyingDataProvider getKeyingDataProvider(String libPath, String providerName, int slotId, String password)
-            throws KeyStoreException, SigningCertChainException, UnexpectedJCAException, NoSuchAlgorithmException,
-            CertificateException, IOException, UnrecoverableKeyException {
+            throws KeyStoreException {
 
         KeyingDataProvider keyingProvider = new PKCS11KeyStoreKeyingDataProvider(libPath, providerName, new FirstCertificateSelector(), new DirectPasswordProvider(password), null, false);
 //        KeyingDataProvider keyingProvider = new PKCS11KeyStoreKeyingDataProvider(libPath, providerName, slotId,
 //                new FirstCertificateSelector(), new DirectPasswordProvider(password), null, false);
-
         return keyingProvider;
     }
 
@@ -179,65 +147,99 @@ public class XadesBesSigner {
      * @throws FileNotFoundException
      */
     public void signWithoutIDEnveloped(String inputPath, String outputPath)
-            throws TransformerFactoryConfigurationError, XAdES4jException, TransformerConfigurationException,
-            TransformerException, IOException, FileNotFoundException {
-        long start = System.nanoTime();
+            throws TransformerFactoryConfigurationError, XAdES4jException, IOException, FileNotFoundException {
 
-
-        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-        dbf.setNamespaceAware(true);
+        //Time measurement
+//        long start = System.nanoTime();
         Document sourceDoc = null;
-
+        FileOutputStream fileOutputStream = null;
         try {
-            sourceDoc = dbf.newDocumentBuilder().parse(inputPath);
-        } catch (SAXException ex) {
-            ex.printStackTrace();
-        } catch (ParserConfigurationException ex) {
-            ex.printStackTrace();
+            sourceDoc = getPlainDocumentFromFile(inputPath);
+            Document docs = getSignedDocument(sourceDoc);
+
+            fileOutputStream = new FileOutputStream(outputPath);
+
+            XMLUtils.outputDOM(docs, fileOutputStream);
+
+        } catch (SAXException e) {
+            log.error(e.getMessage(), e);
+        } catch (ParserConfigurationException e) {
+            log.error(e.getMessage(), e);
         }
+//        log.info("Elapsed ms: " + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
+    }
 
-        FileOutputStream bos = new FileOutputStream(outputPath);
-//        FileOutputStream bos = new FileOutputStream(signedPath);
+    /**
+     * Get signed XML from input content.
+     */
+    public String getSignedXML(String content) {
+        if ("".equalsIgnoreCase(content)) {
+            throw new IllegalArgumentException("empty content");
+        }
+        String result = "";
+        ByteArrayOutputStream baos = null;
+        try {
+            Document signedDoc = getSignedDocument(getDocumentFromContent(content));
+            baos = new ByteArrayOutputStream();
+            XMLUtils.outputDOM(signedDoc, baos);
+            result = baos.toString();
+        } catch (ParserConfigurationException e) {
+            log.error(e.getMessage(), e);
+        } catch (IOException e) {
+            log.error(e.getMessage(), e);
+        } catch (SAXException e) {
+            log.error(e.getMessage(), e);
+        } catch (XAdES4jException e) {
+            log.error(e.getMessage(), e);
+        } finally {
+            if (null != baos) {
+                try {
+                    baos.close();
+                } catch (IOException e) {
+                }
+            }
+        }
+        return result;
+    }
 
-        Element elementToSign = sourceDoc.getDocumentElement();
+    private Document getDocumentFromContent(String xmlString) throws ParserConfigurationException, IOException, SAXException {
+        DocumentBuilderFactory documentBuilderFactory = DocumentBuilderFactory.newInstance();
+        documentBuilderFactory.setNamespaceAware(true);
+        InputSource is = new InputSource();
+        is.setCharacterStream(new StringReader(xmlString));
+        return documentBuilderFactory.newDocumentBuilder().parse(is);
+    }
+
+    private Document getPlainDocumentFromFile(String xmlFilePath) throws ParserConfigurationException, IOException, SAXException {
+        DocumentBuilderFactory documentBuilderFactory = DocumentBuilderFactory.newInstance();
+        documentBuilderFactory.setNamespaceAware(true);
+        return documentBuilderFactory.newDocumentBuilder().parse(xmlFilePath);
+    }
+
+    private Document getSignedDocument(Document plainDocument) throws XAdES4jException {
+
+        Element elementToSign = plainDocument.getDocumentElement();
         String refUri;
 
         if (elementToSign.hasAttribute("Id")) {
             refUri = '#' + elementToSign.getAttribute("Id");
         } else {
             if (elementToSign.getParentNode().getNodeType() != Node.DOCUMENT_NODE) {
-                bos.close();
                 throw new IllegalArgumentException("Element without Id must be the document root");
             }
             refUri = "";
         }
 
-        DataObjectDesc dataObjRef = new DataObjectReference(refUri).withTransform(new EnvelopedSignatureTransform());
+        DataObjectDesc dataObjectDesc = new DataObjectReference(refUri).withTransform(new EnvelopedSignatureTransform());
 
-        XadesSignatureResult result = signer.sign(new SignedDataObjects(dataObjRef), sourceDoc.getDocumentElement());
+        XadesSignatureResult result = signer.sign(new SignedDataObjects(dataObjectDesc), plainDocument.getDocumentElement());
         XMLSignature signature = result.getSignature();
-        Document docs = signature.getDocument();
-
-        XMLUtils.outputDOM(docs, bos);
-        log.info("Elapsed ms: " + (System.nanoTime() - start) / 1000000);
-//        log.info("Elapsed seconds: "+ Duration.ofSeconds(System.nanoTime(), start).toString());
+        return signature.getDocument();
     }
-
-    public XadesBesSigner pkcs11Signer() throws Exception {
-        if (null == signer) {
-            setSignerPkcs11(pkcs11LibPath, pkcs11ProviderName, pkcs11SlotId, pkcs11Password);
-        }
-        return instance;
-    }
-
-//    public XadesBesSigner pkcs12Signer() throws Exception {
-//        setSignerPkcs12(pkcs12Path, pkcs12Password, pkType);
-//        return instance;
-//    }
 
     private XadesBesSigner() {
-//        signer = null;
         loadConfig("/Users/siritas_s/workspace/etax_workspace/etax-xades/src/main/resources/conf/etax-xades.properties");
+
         algorithmsProviderEx = new DefaultAlgorithmsProviderEx() {
 
             @Override
@@ -255,6 +257,18 @@ public class XadesBesSigner {
                 return new GenericAlgorithm(XMLSignature.ALGO_ID_SIGNATURE_RSA_SHA512);
             }
         };
+        try {
+            if ("PKCS11".equalsIgnoreCase(pkType)) {
+                setSignerPkcs11(pkcs11LibPath, pkcs11ProviderName, pkcs11SlotId, pkcs11Password);
+            } else if ("PKCS12".equalsIgnoreCase(pkType)) {
+                setSignerPkcs12(pkcs12Path, pkcs12Password, pkType);
+            } else {
+                log.error("{}  is not support", pkType);
+            }
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
+        }
+
     }
 
     private void loadConfig(String configPath) {
