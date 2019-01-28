@@ -1,0 +1,1 @@
+inputPath=src%2Fmain%2Fresources%2FETDA-invoice_20180220175250.xml&outputPath=ETDA-invoice_20180220175250-signed.xml&=
