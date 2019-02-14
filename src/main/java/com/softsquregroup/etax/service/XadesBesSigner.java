@@ -33,6 +33,7 @@ import xades4j.providers.impl.DirectPasswordProvider;
 import xades4j.providers.impl.FileSystemKeyStoreKeyingDataProvider;
 import xades4j.providers.impl.FirstCertificateSelector;
 import xades4j.providers.impl.PKCS11KeyStoreKeyingDataProvider;
+import xades4j.utils.XadesProfileResolutionException;
 import xades4j.verification.UnexpectedJCAException;
 
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -82,28 +83,19 @@ public class XadesBesSigner {
         return instance;
     }
 
-    private void setSignerPkcs11(String libPath, String providerName, int slotId, String password) throws Exception {// SigningException
-
-        try {
+    private void setSignerPkcs11(String libPath, String providerName, int slotId, String password) throws SigningCertChainException, KeyStoreException, UnexpectedJCAException, XadesProfileResolutionException {// SigningException
+        log.info("setSignerPkcs11()");
             KeyingDataProvider keyingProvider = getKeyingDataProvider(libPath, providerName, slotId, password);
             XadesSigningProfile p = new XadesBesSigningProfile(keyingProvider);
             p.withAlgorithmsProviderEx(algorithmsProviderEx);
             signer = p.newSigner();
-        } catch (Exception ex) {
-            throw new Exception("Error " + ex);
-        }
     }
 
-    private void setSignerPkcs12(String keyPath, String password, String pkType) throws Exception {// SigningException
-        try {
+    private void setSignerPkcs12(String keyPath, String password, String pkType) throws SigningCertChainException, KeyStoreException, UnexpectedJCAException, XadesProfileResolutionException {// SigningException
             KeyingDataProvider keyingProvider = getKeyingDataProvider(keyPath, password, pkType);
             XadesSigningProfile p = new XadesBesSigningProfile(keyingProvider);
             p.withAlgorithmsProviderEx(algorithmsProviderEx);
-
             signer = p.newSigner();
-        } catch (Exception ex) {
-            throw new Exception("Error " + ex);
-        }
     }
 
     /**
@@ -111,7 +103,7 @@ public class XadesBesSigner {
      */
     private static KeyingDataProvider getKeyingDataProvider(String libPath, String providerName, int slotId, String password)
             throws KeyStoreException, SigningCertChainException, UnexpectedJCAException {
-
+        log.debug("getKeyingDataProvider()");
         KeyingDataProvider keyingProvider = new PKCS11KeyStoreKeyingDataProvider(libPath, providerName, new FirstCertificateSelector(), new DirectPasswordProvider(password), null, false);
 //        KeyingDataProvider keyingProvider = new PKCS11KeyStoreKeyingDataProvider(libPath, providerName, slotId,
 //                new FirstCertificateSelector(), new DirectPasswordProvider(password), null, false);
@@ -244,7 +236,7 @@ public class XadesBesSigner {
     }
 
     private XadesBesSigner() {
-        loadConfig("");
+        loadConfig("target/classes/conf/etax-xades.properties");
 
         algorithmsProviderEx = new DefaultAlgorithmsProviderEx() {
 
