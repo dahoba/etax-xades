@@ -47,7 +47,6 @@ public class WebController {
         sb.append(".");
         sb.append(FilenameUtils.getExtension(signedPath));
 
-//        log.info("output: {}", signedPath);
         log.info("output: {}", sb.toString());
 
 
@@ -57,8 +56,6 @@ public class WebController {
             }
             //Time measurement
             long start = System.nanoTime();
-
-//            signer.signWithoutIDEnveloped(inputPath, signedPath);
             signer.signWithoutIDEnveloped(inputPath, sb.toString());
 
             log.info("{} Elapsed ms: {}", counter++, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
@@ -84,6 +81,17 @@ public class WebController {
             } catch (IOException e) {
                 log.error(e.getMessage(), e);
             }
+        }
+    }
+
+    @GetMapping("/checkHsm")
+    public void checkHsm() {
+        try {
+            if (null == signer) {
+                signer = XadesBesSigner.getInstance();
+            }
+        } catch (Exception e) {
+            log.error(e.getMessage(), e);
         }
     }
 }

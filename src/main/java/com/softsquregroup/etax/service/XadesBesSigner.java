@@ -5,6 +5,9 @@ import org.apache.commons.io.FileUtils;
 import org.apache.xml.security.algorithms.MessageDigestAlgorithm;
 import org.apache.xml.security.signature.XMLSignature;
 import org.apache.xml.security.utils.XMLUtils;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.Resource;
+import org.springframework.util.ResourceUtils;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -38,19 +41,20 @@ import javax.xml.transform.TransformerConfigurationException;
 import javax.xml.transform.TransformerException;
 import javax.xml.transform.TransformerFactoryConfigurationError;
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.StringReader;
 import java.security.KeyStoreException;
+import java.security.cert.X509Certificate;
+import java.util.List;
 import java.util.Properties;
 
 @Slf4j
 public class XadesBesSigner {
 
     private static final String CONFIG_PATH = "src/main/resources/conf/etax-xades.properties";
-//    private static final Byte PKCS11 = 1;
+    //    private static final Byte PKCS11 = 1;
 //    private static final Byte PKCS12 = 2;
     private static XadesSigner signer;
     private static XadesBesSigner instance;
@@ -64,6 +68,8 @@ public class XadesBesSigner {
     private String xmlInput;
     private String xmlOutput;
     private AlgorithmsProviderEx algorithmsProviderEx;
+    private Resource xadesPropertiesConfig;
+
 
     /**
      * Return instance of PKCS#11 signer
@@ -82,7 +88,6 @@ public class XadesBesSigner {
             KeyingDataProvider keyingProvider = getKeyingDataProvider(libPath, providerName, slotId, password);
             XadesSigningProfile p = new XadesBesSigningProfile(keyingProvider);
             p.withAlgorithmsProviderEx(algorithmsProviderEx);
-
             signer = p.newSigner();
         } catch (Exception ex) {
             throw new Exception("Error " + ex);
@@ -105,11 +110,12 @@ public class XadesBesSigner {
      * For PKCS#11
      */
     private static KeyingDataProvider getKeyingDataProvider(String libPath, String providerName, int slotId, String password)
-            throws KeyStoreException {
+            throws KeyStoreException, SigningCertChainException, UnexpectedJCAException {
 
         KeyingDataProvider keyingProvider = new PKCS11KeyStoreKeyingDataProvider(libPath, providerName, new FirstCertificateSelector(), new DirectPasswordProvider(password), null, false);
 //        KeyingDataProvider keyingProvider = new PKCS11KeyStoreKeyingDataProvider(libPath, providerName, slotId,
 //                new FirstCertificateSelector(), new DirectPasswordProvider(password), null, false);
+        List<X509Certificate> certChain = keyingProvider.getSigningCertificateChain();
         return keyingProvider;
     }
 
@@ -238,7 +244,7 @@ public class XadesBesSigner {
     }
 
     private XadesBesSigner() {
-        loadConfig("/Users/siritas_s/workspace/etax_workspace/etax-xades/src/main/resources/conf/etax-xades.properties");
+        loadConfig("");
 
         algorithmsProviderEx = new DefaultAlgorithmsProviderEx() {
 
@@ -267,17 +273,23 @@ public class XadesBesSigner {
             }
         } catch (Exception e) {
             log.error(e.getMessage(), e);
+            throw new RuntimeException(e);
         }
 
     }
 
-    private void loadConfig(String configPath) {
+    private void loadConfig(String fileSystemConfigPath) {
         Properties prop;
         try {
             prop = new Properties();
             // load the properties file
+            if ("".equalsIgnoreCase(fileSystemConfigPath)) {
+                xadesPropertiesConfig = new ClassPathResource("classpath:conf/etax-xades.properties");
+                prop.load(xadesPropertiesConfig.getInputStream());
+            } else {
+                prop.load(FileUtils.openInputStream(ResourceUtils.getFile(fileSystemConfigPath)));
+            }
 
-            prop.load(FileUtils.openInputStream(new File(configPath)));
             log.info("PKCS11_PROVIDER_NAME: " + prop.getProperty("PKCS11_PROVIDER_NAME"));
             xmlInput = prop.getProperty("SIGN_INPUT_PATH");
             xmlOutput = prop.getProperty("SIGN_OUTPUT_PATH");
